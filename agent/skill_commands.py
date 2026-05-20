@@ -50,6 +50,43 @@ def _resolve_skill_commands_platform() -> Optional[str]:
         resolved_platform = os.getenv("HERMES_PLATFORM")
     return resolved_platform or None
 
+
+def _normalize_skill_command_slug(value: str) -> str:
+    """Normalize a skill name/alias into a clean hyphenated slash-command slug."""
+    cmd_name = (value or "").lower().replace(" ", "-").replace("_", "-")
+    cmd_name = _SKILL_INVALID_CHARS.sub('', cmd_name)
+    cmd_name = _SKILL_MULTI_HYPHEN.sub('-', cmd_name).strip('-')
+    return cmd_name
+
+
+def _extract_skill_command_aliases(frontmatter: dict[str, Any]) -> list[str]:
+    """Return optional slash-command aliases declared in skill frontmatter.
+
+    Supports either:
+    - ``slash_aliases: [foo, bar]``
+    - ``slash_aliases: foo``
+
+    Plain ``aliases`` is intentionally ignored here because some skills may use
+    that key for non-command naming purposes.
+    """
+    raw = frontmatter.get("slash_aliases")
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        candidates = [raw]
+    elif isinstance(raw, (list, tuple, set)):
+        candidates = [str(item) for item in raw]
+    else:
+        return []
+    aliases: list[str] = []
+    seen: set[str] = set()
+    for item in candidates:
+        slug = _normalize_skill_command_slug(str(item).lstrip('/'))
+        if slug and slug not in seen:
+            seen.add(slug)
+            aliases.append(slug)
+    return aliases
+
 def _load_skill_payload(skill_identifier: str, task_id: str | None = None) -> tuple[dict[str, Any], Path | None, str] | None:
     """Load a skill by name/path and return (loaded_payload, skill_dir, display_name)."""
     raw_identifier = (skill_identifier or "").strip()
@@ -286,17 +323,27 @@ def scan_skill_commands() -> Dict[str, Dict[str, Any]]:
                     # Normalize to hyphen-separated slug, stripping
                     # non-alnum chars (e.g. +, /) to avoid invalid
                     # Telegram command names downstream.
-                    cmd_name = name.lower().replace(' ', '-').replace('_', '-')
-                    cmd_name = _SKILL_INVALID_CHARS.sub('', cmd_name)
-                    cmd_name = _SKILL_MULTI_HYPHEN.sub('-', cmd_name).strip('-')
+                    cmd_name = _normalize_skill_command_slug(name)
                     if not cmd_name:
                         continue
-                    _skill_commands[f"/{cmd_name}"] = {
+                    slash_aliases = _extract_skill_command_aliases(frontmatter)
+                    command_info = {
                         "name": name,
                         "description": description or f"Invoke the {name} skill",
                         "skill_md_path": str(skill_md),
                         "skill_dir": str(skill_md.parent),
+                        "canonical_cmd_key": f"/{cmd_name}",
                     }
+                    for slug in [cmd_name, *slash_aliases]:
+                        cmd_key = f"/{slug}"
+                        if cmd_key in _skill_commands:
+                            logger.debug(
+                                "Skipping duplicate skill slash command %s for %s",
+                                cmd_key,
+                                name,
+                            )
+                            continue
+                        _skill_commands[cmd_key] = dict(command_info)
                 except Exception:
                     continue
     except Exception:

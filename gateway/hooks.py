@@ -14,6 +14,8 @@ Events:
   - agent:start         -- Agent begins processing a message
   - agent:step          -- Each turn in the tool-calling loop
   - agent:end           -- Agent finishes processing
+  - tool:result         -- Each individual tool execution completes.
+                          context: tool_name, tool_args, result, duration, is_error, iteration
   - command:*           -- Any slash command executed (wildcard match)
 
 Errors in hooks are caught and logged but never block the main pipeline.

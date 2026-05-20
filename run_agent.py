@@ -1169,6 +1169,7 @@ class AIAgent:
         reasoning_callback: callable = None,
         clarify_callback: callable = None,
         step_callback: callable = None,
+        tool_result_callback: callable = None,
         stream_delta_callback: callable = None,
         interim_assistant_callback: callable = None,
         tool_gen_callback: callable = None,
@@ -1394,6 +1395,7 @@ class AIAgent:
         self.reasoning_callback = reasoning_callback
         self.clarify_callback = clarify_callback
         self.step_callback = step_callback
+        self.tool_result_callback = tool_result_callback
         self.stream_delta_callback = stream_delta_callback
         self.interim_assistant_callback = interim_assistant_callback
         self.status_callback = status_callback
@@ -11416,6 +11418,20 @@ class AIAgent:
             }
             messages.append(tool_msg)
 
+            # ── Fire tool_result_callback per-tool (concurrent path) ──────
+            if self.tool_result_callback is not None:
+                try:
+                    # name is always available from parsed_calls iteration
+                    self.tool_result_callback(
+                        name if isinstance(name, str) else "",
+                        args if isinstance(args, dict) else {},
+                        function_result, tool_duration,
+                        is_error=is_error if 'is_error' in dir() else False,
+                        iteration=api_call_count,
+                    )
+                except Exception as _trc_err:
+                    logger.debug("tool_result_callback error: %s", _trc_err)
+
             # ── Per-tool /steer drain ───────────────────────────────────
             # Same as the sequential path: drain between each collected
             # result so the steer lands as early as possible.
@@ -11830,6 +11846,20 @@ class AIAgent:
                 "tool_call_id": tool_call.id
             }
             messages.append(tool_msg)
+
+            # ── Fire tool_result_callback per-tool ──────────────────────────
+            # Allows the platform layer (gateway, CLI) to react to individual
+            # tool results — e.g. failure detection, progress logging, or
+            # PUA-style "stop spinning" enforcement.
+            if self.tool_result_callback is not None:
+                try:
+                    self.tool_result_callback(
+                        function_name, function_args, function_result,
+                        tool_duration, is_error=_is_error_result,
+                        iteration=api_call_count,
+                    )
+                except Exception as _trc_err:
+                    logger.debug("tool_result_callback error: %s", _trc_err)
 
             # ── Per-tool /steer drain ───────────────────────────────────
             # Drain pending steer BETWEEN individual tool calls so the

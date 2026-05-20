@@ -56,6 +56,15 @@ class TestScanSkillCommands:
         assert "/my-skill" in result
         assert result["/my-skill"]["name"] == "my-skill"
 
+    def test_registers_slash_aliases(self, tmp_path):
+        with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
+            _make_skill(tmp_path, "my-skill", frontmatter_extra="slash_aliases: [my-alias]\n")
+            result = scan_skill_commands()
+        assert "/my-skill" in result
+        assert "/my-alias" in result
+        assert result["/my-alias"]["name"] == "my-skill"
+        assert result["/my-alias"]["canonical_cmd_key"] == "/my-skill"
+
     def test_empty_dir(self, tmp_path):
         with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
             result = scan_skill_commands()

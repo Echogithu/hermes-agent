@@ -313,12 +313,32 @@ def scan_skill_commands() -> Dict[str, Dict[str, Any]]:
                     cmd_name = _SKILL_MULTI_HYPHEN.sub('-', cmd_name).strip('-')
                     if not cmd_name:
                         continue
-                    _skill_commands[f"/{cmd_name}"] = {
+                    canonical_cmd_key = f"/{cmd_name}"
+                    command_info = {
                         "name": name,
                         "description": description or f"Invoke the {name} skill",
                         "skill_md_path": str(skill_md),
                         "skill_dir": str(skill_md.parent),
+                        "canonical_cmd_key": canonical_cmd_key,
                     }
+                    _skill_commands[canonical_cmd_key] = command_info
+
+                    aliases_raw = frontmatter.get('slash_aliases')
+                    if isinstance(aliases_raw, str):
+                        aliases_iter = [aliases_raw]
+                    elif isinstance(aliases_raw, (list, tuple, set)):
+                        aliases_iter = aliases_raw
+                    else:
+                        aliases_iter = []
+                    for alias in aliases_iter:
+                        alias_name = str(alias).lstrip('/').lower().replace(' ', '-').replace('_', '-')
+                        alias_name = _SKILL_INVALID_CHARS.sub('', alias_name)
+                        alias_name = _SKILL_MULTI_HYPHEN.sub('-', alias_name).strip('-')
+                        if not alias_name:
+                            continue
+                        alias_key = f"/{alias_name}"
+                        if alias_key not in _skill_commands:
+                            _skill_commands[alias_key] = dict(command_info)
                 except Exception:
                     continue
     except Exception:

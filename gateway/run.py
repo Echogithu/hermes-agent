@@ -16119,6 +16119,32 @@ class GatewayRunner:
                 log_message="agent:step hook scheduling error",
             )
 
+        # Bridge sync tool_result_callback → async hooks.emit for tool:result events
+        # Fired once per individual tool execution, providing detailed per-tool info.
+        def _tool_result_callback_sync(
+            tool_name: str, tool_args: dict, result: str,
+            duration: float, is_error: bool, iteration: int,
+        ) -> None:
+            if not _run_still_current():
+                return
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    _hooks_ref.emit("tool:result", {
+                        "platform": source.platform.value if source.platform else "",
+                        "user_id": source.user_id,
+                        "session_id": session_id,
+                        "iteration": iteration,
+                        "tool_name": tool_name,
+                        "tool_args": tool_args,
+                        "result": result,
+                        "duration": duration,
+                        "is_error": is_error,
+                    }),
+                    _loop_for_step,
+                )
+            except Exception as _e:
+                logger.debug("tool:result hook error: %s", _e)
+
         # Bridge sync status_callback → async adapter.send for context pressure
         _status_adapter = self.adapters.get(source.platform)
         _status_chat_id = source.chat_id
@@ -16405,6 +16431,7 @@ class GatewayRunner:
             # turn and must not be baked into the cached agent constructor.
             agent.tool_progress_callback = progress_callback if tool_progress_enabled else None
             agent.step_callback = _step_callback_sync if _hooks_ref.loaded_hooks else None
+            agent.tool_result_callback = _tool_result_callback_sync if _hooks_ref.loaded_hooks else None
             agent.stream_delta_callback = _stream_delta_cb
             agent.interim_assistant_callback = _interim_assistant_cb if _want_interim_messages else None
             agent.status_callback = _status_callback_sync

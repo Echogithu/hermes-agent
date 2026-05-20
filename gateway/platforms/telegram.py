@@ -261,6 +261,25 @@ class TelegramAdapter(BasePlatformAdapter):
         allowed_ids = {uid.strip() for uid in allowed_csv.split(",") if uid.strip()}
         return "*" in allowed_ids or user_id in allowed_ids
 
+    @staticmethod
+    def _is_dm_allowed(message: Message) -> bool:
+        """Return whether a DM sender is allowed.
+
+        Returns True when TELEGRAM_ALLOWED_USERS is unset (open access).
+        Returns True when the sender's user ID is in the allowlist.
+        Returns False for unknown senders when the allowlist is configured.
+        """
+        allowed_csv = os.getenv("TELEGRAM_ALLOWED_USERS", "").strip()
+        if not allowed_csv:
+            return True
+        allowed_ids = {uid.strip() for uid in allowed_csv.split(",") if uid.strip()}
+        if "*" in allowed_ids:
+            return True
+        user = message.from_user
+        if user is None:
+            return False
+        return str(user.id) in allowed_ids
+
     @classmethod
     def _metadata_thread_id(cls, metadata: Optional[Dict[str, Any]]) -> Optional[str]:
         if not metadata:
@@ -2348,9 +2367,13 @@ class TelegramAdapter(BasePlatformAdapter):
         return cleaned or text
 
     def _should_process_message(self, message: Message, *, is_command: bool = False) -> bool:
-        """Apply Telegram group trigger rules.
+        """Apply Telegram group trigger rules and DM allowlist.
 
-        DMs remain unrestricted. Group/supergroup messages are accepted when:
+        DMs are unrestricted when ``TELEGRAM_ALLOWED_USERS`` is unset.
+        When set, DM senders must be in the allowlist — unknown users
+        are silently ignored.
+
+        Group/supergroup messages are accepted when:
         - the chat is explicitly allowlisted in ``free_response_chats``
         - ``require_mention`` is disabled
         - the message replies to the bot
@@ -2364,8 +2387,11 @@ class TelegramAdapter(BasePlatformAdapter):
         mentioning the bot (``@botname /command``), both of which are
         recognised as mentions by :meth:`_message_mentions_bot`.
         """
+        # ── DM allowlist ──────────────────────────────────────────
+        # If TELEGRAM_ALLOWED_USERS is configured, non-allowlisted
+        # senders in DM are silently dropped.
         if not self._is_group_chat(message):
-            return True
+            return self._is_dm_allowed(message)
         thread_id = getattr(message, "message_thread_id", None)
         if thread_id is not None:
             try:

@@ -826,13 +826,17 @@ def _read_claude_code_credentials_from_keychain() -> Optional[Dict[str, Any]]:
         logger.debug("Keychain: no entry found for 'Claude Code-credentials'")
         return None
 
-    raw = result.stdout.strip()
+    raw_stdout = getattr(result, "stdout", "")
+    if not isinstance(raw_stdout, str):
+        logger.debug("Keychain: security command returned non-string stdout")
+        return None
+    raw = raw_stdout.strip()
     if not raw:
         return None
 
     try:
         data = json.loads(raw)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         logger.debug("Keychain: credentials payload is not valid JSON")
         return None
 
@@ -864,12 +868,10 @@ def read_claude_code_credentials() -> Optional[Dict[str, Any]]:
 
     Returns dict with {accessToken, refreshToken?, expiresAt?} or None.
     """
-    # Try macOS Keychain first (covers Claude Code >=2.1.114)
-    kc_creds = _read_claude_code_credentials_from_keychain()
-    if kc_creds:
-        return kc_creds
+    keychain_creds = _read_claude_code_credentials_from_keychain()
+    if keychain_creds:
+        return keychain_creds
 
-    # Fall back to JSON file
     cred_path = Path.home() / ".claude" / ".credentials.json"
     if cred_path.exists():
         try:

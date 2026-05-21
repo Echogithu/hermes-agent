@@ -182,7 +182,7 @@ def build_plan_path(
     if slug:
         slug = "-".join(part for part in slug.split("-")[:8] if part)[:48].strip("-")
     slug = slug or "conversation-plan"
-    timestamp = (now or datetime.now()).strftime("%Y-%m-%d_%H%M%S")
+    timestamp = (now or datetime.now()).strftime("%Y-%m-%d_%H%M%S_%f")
     return Path(".hermes") / "plans" / f"{timestamp}-{slug}.md"
 
 

@@ -389,7 +389,7 @@ class TestPlanSkillHelpers:
             now=datetime(2026, 3, 15, 9, 30, 45),
         )
 
-        assert path == Path(".hermes") / "plans" / "2026-03-15_093045-implement-oauth-login-refresh-tokens.md"
+        assert path == Path(".hermes") / "plans" / "2026-03-15_093045_000000-implement-oauth-login-refresh-tokens.md"
 
     def test_plan_skill_message_can_include_runtime_save_path_note(self, tmp_path):
         with patch("tools.skills_tool.SKILLS_DIR", tmp_path):

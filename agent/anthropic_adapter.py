@@ -14,6 +14,8 @@ import copy
 import json
 import logging
 import os
+import platform
+import subprocess
 from pathlib import Path
 
 from hermes_constants import get_hermes_home
@@ -461,8 +463,72 @@ def build_anthropic_bedrock_client(region: str):
     )
 
 
+def _read_claude_code_credentials_from_keychain() -> Optional[Dict[str, Any]]:
+    """Read Claude Code OAuth credentials from the macOS Keychain.
+
+    Claude Code >=2.1.114 stores credentials in the macOS Keychain under the
+    service name "Claude Code-credentials" rather than (or in addition to)
+    the JSON file at ~/.claude/.credentials.json.
+
+    The password field contains a JSON string with the same claudeAiOauth
+    structure as the JSON file.
+
+    Returns dict with {accessToken, refreshToken?, expiresAt?} or None.
+    """
+    if platform.system() != "Darwin":
+        return None
+
+    try:
+        # Read the "Claude Code-credentials" generic password entry
+        result = subprocess.run(
+            ["security", "find-generic-password",
+             "-s", "Claude Code-credentials",
+             "-w"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        logger.debug("Keychain: security command not available or timed out")
+        return None
+
+    if result.returncode != 0:
+        logger.debug("Keychain: no entry found for 'Claude Code-credentials'")
+        return None
+
+    raw_stdout = getattr(result, "stdout", "")
+    if not isinstance(raw_stdout, str):
+        logger.debug("Keychain: security command returned non-string stdout")
+        return None
+    raw = raw_stdout.strip()
+    if not raw:
+        return None
+
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        logger.debug("Keychain: credentials payload is not valid JSON")
+        return None
+
+    oauth_data = data.get("claudeAiOauth")
+    if oauth_data and isinstance(oauth_data, dict):
+        access_token = oauth_data.get("accessToken", "")
+        if access_token:
+            return {
+                "accessToken": access_token,
+                "refreshToken": oauth_data.get("refreshToken", ""),
+                "expiresAt": oauth_data.get("expiresAt", 0),
+                "source": "macos_keychain",
+            }
+
+    return None
+
 def read_claude_code_credentials() -> Optional[Dict[str, Any]]:
-    """Read refreshable Claude Code OAuth credentials from ~/.claude/.credentials.json.
+    """Read refreshable Claude Code OAuth credentials.
+
+    Checks two sources in order:
+      1. macOS Keychain (Darwin only) — "Claude Code-credentials" entry
+      2. ~/.claude/.credentials.json file
 
     This intentionally excludes ~/.claude.json primaryApiKey. Opencode's
     subscription flow is OAuth/setup-token based with refreshable credentials,
@@ -471,6 +537,10 @@ def read_claude_code_credentials() -> Optional[Dict[str, Any]]:
 
     Returns dict with {accessToken, refreshToken?, expiresAt?} or None.
     """
+    keychain_creds = _read_claude_code_credentials_from_keychain()
+    if keychain_creds:
+        return keychain_creds
+
     cred_path = Path.home() / ".claude" / ".credentials.json"
     if cred_path.exists():
         try:

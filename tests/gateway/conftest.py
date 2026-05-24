@@ -39,6 +39,11 @@ from unittest.mock import MagicMock
 import pytest
 
 
+def assert_parse_mode_markdown_v2(parse_mode) -> None:
+    """Assert Telegram MarkdownV2 across real PTB enums and local mocks."""
+    assert parse_mode == "MarkdownV2" or "MARKDOWN_V2" in repr(parse_mode)
+
+
 def _ensure_telegram_mock() -> None:
     """Install a comprehensive telegram mock in sys.modules.
 
@@ -50,11 +55,26 @@ def _ensure_telegram_mock() -> None:
     if "telegram" in sys.modules and hasattr(sys.modules["telegram"], "__file__"):
         return  # Real library is installed — nothing to mock
 
+    class _FakeParseModeValue(str):
+        """String-compatible parse mode with python-telegram-bot-like repr."""
+
+        name: str
+        value: str
+
+        def __new__(cls, name: str, value: str):
+            obj = str.__new__(cls, value)
+            obj.name = name
+            obj.value = value
+            return obj
+
+        def __repr__(self) -> str:
+            return f"<ParseMode.{self.name}>"
+
     mod = MagicMock()
     mod.ext.ContextTypes.DEFAULT_TYPE = type(None)
-    mod.constants.ParseMode.MARKDOWN = "Markdown"
-    mod.constants.ParseMode.MARKDOWN_V2 = "MarkdownV2"
-    mod.constants.ParseMode.HTML = "HTML"
+    mod.constants.ParseMode.MARKDOWN = _FakeParseModeValue("MARKDOWN", "Markdown")
+    mod.constants.ParseMode.MARKDOWN_V2 = _FakeParseModeValue("MARKDOWN_V2", "MarkdownV2")
+    mod.constants.ParseMode.HTML = _FakeParseModeValue("HTML", "HTML")
     mod.constants.ChatType.PRIVATE = "private"
     mod.constants.ChatType.GROUP = "group"
     mod.constants.ChatType.SUPERGROUP = "supergroup"

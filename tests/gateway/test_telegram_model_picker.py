@@ -6,16 +6,31 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from .conftest import assert_parse_mode_markdown_v2
+
 
 def _ensure_telegram_mock():
     if "telegram" in sys.modules and hasattr(sys.modules["telegram"], "__file__"):
         return
 
+    class _FakeParseModeValue(str):
+        name: str
+        value: str
+
+        def __new__(cls, name: str, value: str):
+            obj = str.__new__(cls, value)
+            obj.name = name
+            obj.value = value
+            return obj
+
+        def __repr__(self) -> str:
+            return f"<ParseMode.{self.name}>"
+
     mod = MagicMock()
     mod.ext.ContextTypes.DEFAULT_TYPE = type(None)
-    mod.constants.ParseMode.MARKDOWN = "Markdown"
-    mod.constants.ParseMode.MARKDOWN_V2 = "MarkdownV2"
-    mod.constants.ParseMode.HTML = "HTML"
+    mod.constants.ParseMode.MARKDOWN = _FakeParseModeValue("MARKDOWN", "Markdown")
+    mod.constants.ParseMode.MARKDOWN_V2 = _FakeParseModeValue("MARKDOWN_V2", "MarkdownV2")
+    mod.constants.ParseMode.HTML = _FakeParseModeValue("HTML", "HTML")
     mod.constants.ChatType.PRIVATE = "private"
     mod.constants.ChatType.GROUP = "group"
     mod.constants.ChatType.SUPERGROUP = "supergroup"
@@ -67,7 +82,7 @@ class TestTelegramModelPicker:
         )
 
         assert result.success is True
-        assert "MARKDOWN_V2" in repr(sent["parse_mode"])
+        assert_parse_mode_markdown_v2(sent["parse_mode"])
         assert "provider\\_one" in sent["text"]
         assert "`model_1`" in sent["text"]
 
@@ -98,7 +113,7 @@ class TestTelegramModelPicker:
         await adapter._handle_model_picker_callback(query, "mb", "12345")
 
         edit_kwargs = query.edit_message_text.call_args[1]
-        assert "MARKDOWN_V2" in repr(edit_kwargs["parse_mode"])
+        assert_parse_mode_markdown_v2(edit_kwargs["parse_mode"])
         assert "provider\\_one" in edit_kwargs["text"]
         assert "`model_1`" in edit_kwargs["text"]
 
@@ -139,7 +154,7 @@ class TestTelegramModelPicker:
         # regression we're guarding).
         query.edit_message_text.assert_awaited()
         edit_kwargs = query.edit_message_text.call_args[1]
-        assert "MARKDOWN_V2" in repr(edit_kwargs["parse_mode"])
+        assert_parse_mode_markdown_v2(edit_kwargs["parse_mode"])
         # The dynamic result text was routed through format_message
         # (backtick code blocks survive escaping).
         assert "`gpt-5`" in edit_kwargs["text"]
